@@ -38,7 +38,7 @@ app.post("/api/login", (req, res) => {
   });
 });
 
-// Get all clients - protected route
+// Get all clients
 app.get("/api/clients", authenticateToken, (req, res) => {
   const clients = db
     .prepare("SELECT * FROM clients ORDER BY id DESC")
@@ -50,7 +50,25 @@ app.get("/api/clients", authenticateToken, (req, res) => {
   });
 });
 
-// Create a client - protected route
+// Get one client by ID
+app.get("/api/clients/:id", authenticateToken, (req, res) => {
+  const client = db
+    .prepare("SELECT * FROM clients WHERE id = ?")
+    .get(req.params.id);
+
+  if (!client) {
+    return res.status(404).json({
+      error: "Client not found",
+    });
+  }
+
+  res.json({
+    message: "Client retrieved successfully",
+    client,
+  });
+});
+
+// Create a new client
 app.post("/api/clients", authenticateToken, (req, res) => {
   const { name, email, project, deadline } = req.body;
 
@@ -73,6 +91,67 @@ app.post("/api/clients", authenticateToken, (req, res) => {
   res.status(201).json({
     message: "Client created successfully",
     client,
+  });
+});
+
+// Update a client
+app.put("/api/clients/:id", authenticateToken, (req, res) => {
+  const { name, email, project, deadline } = req.body;
+
+  const existingClient = db
+    .prepare("SELECT * FROM clients WHERE id = ?")
+    .get(req.params.id);
+
+  if (!existingClient) {
+    return res.status(404).json({
+      error: "Client not found",
+    });
+  }
+
+  const updatedName = name ?? existingClient.name;
+  const updatedEmail = email ?? existingClient.email;
+  const updatedProject = project ?? existingClient.project;
+  const updatedDeadline = deadline ?? existingClient.deadline;
+
+  db.prepare(
+    `UPDATE clients
+     SET name = ?, email = ?, project = ?, deadline = ?
+     WHERE id = ?`
+  ).run(
+    updatedName,
+    updatedEmail,
+    updatedProject,
+    updatedDeadline,
+    req.params.id
+  );
+
+  const client = db
+    .prepare("SELECT * FROM clients WHERE id = ?")
+    .get(req.params.id);
+
+  res.json({
+    message: "Client updated successfully",
+    client,
+  });
+});
+
+// Delete a client
+app.delete("/api/clients/:id", authenticateToken, (req, res) => {
+  const existingClient = db
+    .prepare("SELECT * FROM clients WHERE id = ?")
+    .get(req.params.id);
+
+  if (!existingClient) {
+    return res.status(404).json({
+      error: "Client not found",
+    });
+  }
+
+  db.prepare("DELETE FROM clients WHERE id = ?").run(req.params.id);
+
+  res.json({
+    message: "Client deleted successfully",
+    client: existingClient,
   });
 });
 
