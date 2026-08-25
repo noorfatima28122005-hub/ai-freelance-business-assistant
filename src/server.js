@@ -8,14 +8,16 @@ const PORT = 3000;
 
 app.use(express.json());
 
-// Health check
+// ==================== HEALTH CHECK ====================
+
 app.get("/", (req, res) => {
   res.json({
     message: "AI Freelance Business Assistant API is running",
   });
 });
 
-// Demo login
+// ==================== LOGIN ====================
+
 app.post("/api/login", (req, res) => {
   const { email } = req.body;
 
@@ -560,6 +562,72 @@ app.delete("/api/tasks/:id", authenticateToken, (req, res) => {
   res.json({
     message: "Task deleted successfully",
     task: existingTask,
+  });
+});
+
+// ==================== DASHBOARD ====================
+
+// Get business dashboard summary
+app.get("/api/dashboard", authenticateToken, (req, res) => {
+  const totalClients = db
+    .prepare("SELECT COUNT(*) AS count FROM clients")
+    .get().count;
+
+  const totalProjects = db
+    .prepare("SELECT COUNT(*) AS count FROM projects")
+    .get().count;
+
+  const totalTasks = db
+    .prepare("SELECT COUNT(*) AS count FROM tasks")
+    .get().count;
+
+  const pendingTasks = db
+    .prepare(
+      "SELECT COUNT(*) AS count FROM tasks WHERE status = 'pending'"
+    )
+    .get().count;
+
+  const inProgressTasks = db
+    .prepare(
+      "SELECT COUNT(*) AS count FROM tasks WHERE status = 'in-progress'"
+    )
+    .get().count;
+
+  const completedTasks = db
+    .prepare(
+      "SELECT COUNT(*) AS count FROM tasks WHERE status = 'completed'"
+    )
+    .get().count;
+
+  const upcomingTasks = db
+    .prepare(`
+      SELECT
+        tasks.id,
+        tasks.title,
+        tasks.deadline,
+        tasks.status,
+        projects.name AS project_name
+      FROM tasks
+      LEFT JOIN projects ON tasks.project_id = projects.id
+      WHERE tasks.deadline IS NOT NULL
+        AND tasks.deadline >= date('now')
+        AND tasks.status != 'completed'
+      ORDER BY tasks.deadline ASC
+      LIMIT 5
+    `)
+    .all();
+
+  res.json({
+    message: "Dashboard retrieved successfully",
+    summary: {
+      totalClients,
+      totalProjects,
+      totalTasks,
+      pendingTasks,
+      inProgressTasks,
+      completedTasks,
+    },
+    upcomingTasks,
   });
 });
 
