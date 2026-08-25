@@ -12,6 +12,13 @@ app.get("/", (req, res) => {
   });
 });
 
+app.get("/api/clients", (req, res) => {
+  res.json({
+    message: "Clients endpoint is working",
+    clients: [],
+  });
+});
+
 app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+  console.log(`Server running on http://localhost:3000`);
 });
