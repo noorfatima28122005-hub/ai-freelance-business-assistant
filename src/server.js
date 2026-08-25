@@ -38,6 +38,8 @@ app.post("/api/login", (req, res) => {
   });
 });
 
+// ==================== CLIENTS ====================
+
 // Get all clients
 app.get("/api/clients", authenticateToken, (req, res) => {
   const clients = db
@@ -50,7 +52,7 @@ app.get("/api/clients", authenticateToken, (req, res) => {
   });
 });
 
-// Get one client by ID
+// Get one client
 app.get("/api/clients/:id", authenticateToken, (req, res) => {
   const client = db
     .prepare("SELECT * FROM clients WHERE id = ?")
@@ -68,7 +70,7 @@ app.get("/api/clients/:id", authenticateToken, (req, res) => {
   });
 });
 
-// Create a new client
+// Create client
 app.post("/api/clients", authenticateToken, (req, res) => {
   const { name, email, project, deadline } = req.body;
 
@@ -94,7 +96,7 @@ app.post("/api/clients", authenticateToken, (req, res) => {
   });
 });
 
-// Update a client
+// Update client
 app.put("/api/clients/:id", authenticateToken, (req, res) => {
   const { name, email, project, deadline } = req.body;
 
@@ -135,7 +137,7 @@ app.put("/api/clients/:id", authenticateToken, (req, res) => {
   });
 });
 
-// Delete a client
+// Delete client
 app.delete("/api/clients/:id", authenticateToken, (req, res) => {
   const existingClient = db
     .prepare("SELECT * FROM clients WHERE id = ?")
@@ -154,6 +156,208 @@ app.delete("/api/clients/:id", authenticateToken, (req, res) => {
     client: existingClient,
   });
 });
+
+// ==================== PROJECTS ====================
+
+// Get all projects
+app.get("/api/projects", authenticateToken, (req, res) => {
+  const projects = db
+    .prepare(`
+      SELECT
+        projects.*,
+        clients.name AS client_name
+      FROM projects
+      LEFT JOIN clients ON projects.client_id = clients.id
+      ORDER BY projects.id DESC
+    `)
+    .all();
+
+  res.json({
+    message: "Projects retrieved successfully",
+    projects,
+  });
+});
+
+// Get one project
+app.get("/api/projects/:id", authenticateToken, (req, res) => {
+  const project = db
+    .prepare(`
+      SELECT
+        projects.*,
+        clients.name AS client_name
+      FROM projects
+      LEFT JOIN clients ON projects.client_id = clients.id
+      WHERE projects.id = ?
+    `)
+    .get(req.params.id);
+
+  if (!project) {
+    return res.status(404).json({
+      error: "Project not found",
+    });
+  }
+
+  res.json({
+    message: "Project retrieved successfully",
+    project,
+  });
+});
+
+// Create project
+app.post("/api/projects", authenticateToken, (req, res) => {
+  const {
+    name,
+    description,
+    status,
+    deadline,
+    client_id,
+  } = req.body;
+
+  if (!name) {
+    return res.status(400).json({
+      error: "Project name is required",
+    });
+  }
+
+  if (client_id) {
+    const client = db
+      .prepare("SELECT id FROM clients WHERE id = ?")
+      .get(client_id);
+
+    if (!client) {
+      return res.status(404).json({
+        error: "Client not found",
+      });
+    }
+  }
+
+  const result = db
+    .prepare(`
+      INSERT INTO projects
+      (name, description, status, deadline, client_id)
+      VALUES (?, ?, ?, ?, ?)
+    `)
+    .run(
+      name,
+      description,
+      status || "pending",
+      deadline,
+      client_id || null
+    );
+
+  const project = db
+    .prepare(`
+      SELECT
+        projects.*,
+        clients.name AS client_name
+      FROM projects
+      LEFT JOIN clients ON projects.client_id = clients.id
+      WHERE projects.id = ?
+    `)
+    .get(result.lastInsertRowid);
+
+  res.status(201).json({
+    message: "Project created successfully",
+    project,
+  });
+});
+
+// Update project
+app.put("/api/projects/:id", authenticateToken, (req, res) => {
+  const existingProject = db
+    .prepare("SELECT * FROM projects WHERE id = ?")
+    .get(req.params.id);
+
+  if (!existingProject) {
+    return res.status(404).json({
+      error: "Project not found",
+    });
+  }
+
+  const {
+    name,
+    description,
+    status,
+    deadline,
+    client_id,
+  } = req.body;
+
+  if (client_id) {
+    const client = db
+      .prepare("SELECT id FROM clients WHERE id = ?")
+      .get(client_id);
+
+    if (!client) {
+      return res.status(404).json({
+        error: "Client not found",
+      });
+    }
+  }
+
+  const updatedName = name ?? existingProject.name;
+  const updatedDescription =
+    description ?? existingProject.description;
+  const updatedStatus = status ?? existingProject.status;
+  const updatedDeadline =
+    deadline ?? existingProject.deadline;
+  const updatedClientId =
+    client_id ?? existingProject.client_id;
+
+  db.prepare(`
+    UPDATE projects
+    SET name = ?,
+        description = ?,
+        status = ?,
+        deadline = ?,
+        client_id = ?
+    WHERE id = ?
+  `).run(
+    updatedName,
+    updatedDescription,
+    updatedStatus,
+    updatedDeadline,
+    updatedClientId,
+    req.params.id
+  );
+
+  const project = db
+    .prepare(`
+      SELECT
+        projects.*,
+        clients.name AS client_name
+      FROM projects
+      LEFT JOIN clients ON projects.client_id = clients.id
+      WHERE projects.id = ?
+    `)
+    .get(req.params.id);
+
+  res.json({
+    message: "Project updated successfully",
+    project,
+  });
+});
+
+// Delete project
+app.delete("/api/projects/:id", authenticateToken, (req, res) => {
+  const existingProject = db
+    .prepare("SELECT * FROM projects WHERE id = ?")
+    .get(req.params.id);
+
+  if (!existingProject) {
+    return res.status(404).json({
+      error: "Project not found",
+    });
+  }
+
+  db.prepare("DELETE FROM projects WHERE id = ?").run(req.params.id);
+
+  res.json({
+    message: "Project deleted successfully",
+    project: existingProject,
+  });
+});
+
+// ==================== SERVER ====================
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
