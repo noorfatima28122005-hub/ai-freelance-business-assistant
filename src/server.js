@@ -357,6 +357,212 @@ app.delete("/api/projects/:id", authenticateToken, (req, res) => {
   });
 });
 
+// ==================== TASKS ====================
+
+// Get all tasks
+app.get("/api/tasks", authenticateToken, (req, res) => {
+  const tasks = db
+    .prepare(`
+      SELECT
+        tasks.*,
+        projects.name AS project_name
+      FROM tasks
+      LEFT JOIN projects ON tasks.project_id = projects.id
+      ORDER BY tasks.id DESC
+    `)
+    .all();
+
+  res.json({
+    message: "Tasks retrieved successfully",
+    tasks,
+  });
+});
+
+// Get one task
+app.get("/api/tasks/:id", authenticateToken, (req, res) => {
+  const task = db
+    .prepare(`
+      SELECT
+        tasks.*,
+        projects.name AS project_name
+      FROM tasks
+      LEFT JOIN projects ON tasks.project_id = projects.id
+      WHERE tasks.id = ?
+    `)
+    .get(req.params.id);
+
+  if (!task) {
+    return res.status(404).json({
+      error: "Task not found",
+    });
+  }
+
+  res.json({
+    message: "Task retrieved successfully",
+    task,
+  });
+});
+
+// Create task
+app.post("/api/tasks", authenticateToken, (req, res) => {
+  const {
+    title,
+    description,
+    status,
+    priority,
+    deadline,
+    project_id,
+  } = req.body;
+
+  if (!title) {
+    return res.status(400).json({
+      error: "Task title is required",
+    });
+  }
+
+  if (project_id) {
+    const project = db
+      .prepare("SELECT id FROM projects WHERE id = ?")
+      .get(project_id);
+
+    if (!project) {
+      return res.status(404).json({
+        error: "Project not found",
+      });
+    }
+  }
+
+  const result = db
+    .prepare(`
+      INSERT INTO tasks
+      (title, description, status, priority, deadline, project_id)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `)
+    .run(
+      title,
+      description,
+      status || "pending",
+      priority || "medium",
+      deadline,
+      project_id || null
+    );
+
+  const task = db
+    .prepare(`
+      SELECT
+        tasks.*,
+        projects.name AS project_name
+      FROM tasks
+      LEFT JOIN projects ON tasks.project_id = projects.id
+      WHERE tasks.id = ?
+    `)
+    .get(result.lastInsertRowid);
+
+  res.status(201).json({
+    message: "Task created successfully",
+    task,
+  });
+});
+
+// Update task
+app.put("/api/tasks/:id", authenticateToken, (req, res) => {
+  const existingTask = db
+    .prepare("SELECT * FROM tasks WHERE id = ?")
+    .get(req.params.id);
+
+  if (!existingTask) {
+    return res.status(404).json({
+      error: "Task not found",
+    });
+  }
+
+  const {
+    title,
+    description,
+    status,
+    priority,
+    deadline,
+    project_id,
+  } = req.body;
+
+  if (project_id) {
+    const project = db
+      .prepare("SELECT id FROM projects WHERE id = ?")
+      .get(project_id);
+
+    if (!project) {
+      return res.status(404).json({
+        error: "Project not found",
+      });
+    }
+  }
+
+  const updatedTitle = title ?? existingTask.title;
+  const updatedDescription =
+    description ?? existingTask.description;
+  const updatedStatus = status ?? existingTask.status;
+  const updatedPriority = priority ?? existingTask.priority;
+  const updatedDeadline =
+    deadline ?? existingTask.deadline;
+  const updatedProjectId =
+    project_id ?? existingTask.project_id;
+
+  db.prepare(`
+    UPDATE tasks
+    SET title = ?,
+        description = ?,
+        status = ?,
+        priority = ?,
+        deadline = ?,
+        project_id = ?
+    WHERE id = ?
+  `).run(
+    updatedTitle,
+    updatedDescription,
+    updatedStatus,
+    updatedPriority,
+    updatedDeadline,
+    updatedProjectId,
+    req.params.id
+  );
+
+  const task = db
+    .prepare(`
+      SELECT
+        tasks.*,
+        projects.name AS project_name
+      FROM tasks
+      LEFT JOIN projects ON tasks.project_id = projects.id
+      WHERE tasks.id = ?
+    `)
+    .get(req.params.id);
+
+  res.json({
+    message: "Task updated successfully",
+    task,
+  });
+});
+
+// Delete task
+app.delete("/api/tasks/:id", authenticateToken, (req, res) => {
+  const existingTask = db
+    .prepare("SELECT * FROM tasks WHERE id = ?")
+    .get(req.params.id);
+
+  if (!existingTask) {
+    return res.status(404).json({
+      error: "Task not found",
+    });
+  }
+
+  db.prepare("DELETE FROM tasks WHERE id = ?").run(req.params.id);
+
+  res.json({
+    message: "Task deleted successfully",
+    task: existingTask,
+  });
+});
+
 // ==================== SERVER ====================
 
 app.listen(PORT, () => {
