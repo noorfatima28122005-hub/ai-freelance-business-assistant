@@ -1,5 +1,6 @@
 const express = require("express");
 const db = require("./database");
+const { generateToken, authenticateToken } = require("./auth");
 
 const app = express();
 
@@ -14,8 +15,31 @@ app.get("/", (req, res) => {
   });
 });
 
-// Get all clients
-app.get("/api/clients", (req, res) => {
+// Demo login
+app.post("/api/login", (req, res) => {
+  const { email } = req.body;
+
+  if (!email) {
+    return res.status(400).json({
+      error: "Email is required",
+    });
+  }
+
+  const user = {
+    id: 1,
+    email,
+  };
+
+  const token = generateToken(user);
+
+  res.json({
+    message: "Login successful",
+    token,
+  });
+});
+
+// Get all clients - protected route
+app.get("/api/clients", authenticateToken, (req, res) => {
   const clients = db
     .prepare("SELECT * FROM clients ORDER BY id DESC")
     .all();
@@ -26,8 +50,8 @@ app.get("/api/clients", (req, res) => {
   });
 });
 
-// Create a new client
-app.post("/api/clients", (req, res) => {
+// Create a client - protected route
+app.post("/api/clients", authenticateToken, (req, res) => {
   const { name, email, project, deadline } = req.body;
 
   if (!name) {
@@ -52,7 +76,6 @@ app.post("/api/clients", (req, res) => {
   });
 });
 
-// Start server
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);
 });
