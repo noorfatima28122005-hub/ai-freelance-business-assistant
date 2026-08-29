@@ -3,7 +3,7 @@
    Frontend Application
 ========================================================= */
 
-const API_URL = "http://localhost:3000";
+const API_URL = "http://localhost:3001";
 
 let token = localStorage.getItem("token") || "";
 let currentUser = null;
