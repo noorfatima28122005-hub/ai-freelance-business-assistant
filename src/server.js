@@ -1,11 +1,557 @@
 const express = require("express");
-const db = require("./database");
-const { generateToken, authenticateToken } = require("./auth");
+const cors = require("cors");
+const dotenv = require("dotenv");
+const swaggerUi = require("swagger-ui-express");
+const swaggerJsdoc = require("swagger-jsdoc");
+const Database = require("better-sqlite3");
+const crypto = require("crypto");
+const rateLimit = require("express-rate-limit");
+
+const {
+  generateToken,
+  authenticateToken,
+} = require("./auth");
+
+dotenv.config();
+
+// ======================================================
+// APP CONFIGURATION
+// ======================================================
 
 const app = express();
-const PORT = 3000;
 
-app.use(express.json());
+const PORT = Number(process.env.PORT) || 3000;
+
+const appName = "AI Freelance Business Assistant API";
+
+// ======================================================
+// DATABASE
+// ======================================================
+
+const db = new Database("freelance_assistant.db");
+
+db.pragma("foreign_keys = ON");
+db.pragma("journal_mode = WAL");
+
+// ======================================================
+// DATABASE TABLES
+// ======================================================
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    email TEXT UNIQUE NOT NULL,
+    password TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS clients (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    email TEXT,
+    phone TEXT,
+    company TEXT,
+    notes TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS projects (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    description TEXT,
+    client_id INTEGER,
+    status TEXT DEFAULT 'pending',
+    deadline TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (client_id)
+      REFERENCES clients(id)
+      ON DELETE SET NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS tasks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    description TEXT,
+    project_id INTEGER,
+    status TEXT DEFAULT 'pending',
+    priority TEXT DEFAULT 'medium',
+    deadline TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (project_id)
+      REFERENCES projects(id)
+      ON DELETE SET NULL
+  );
+`);
+
+// ======================================================
+// PASSWORD HASHING
+// ======================================================
+
+function hashPassword(password) {
+  return crypto
+    .createHash("sha256")
+    .update(password)
+    .digest("hex");
+}
+
+// ======================================================
+// DEMO USER
+// ======================================================
+
+const demoEmail = "noor@example.com";
+
+const demoUser = db
+  .prepare(
+    "SELECT id FROM users WHERE email = ?"
+  )
+  .get(demoEmail);
+
+if (!demoUser) {
+  const hashedPassword = hashPassword("demo123");
+
+  db.prepare(`
+    INSERT INTO users
+      (name, email, password)
+    VALUES
+      (?, ?, ?)
+  `).run(
+    "Noor Fatima",
+    demoEmail,
+    hashedPassword
+  );
+}
+
+// ======================================================
+// DEMO DATA
+// ======================================================
+
+const clientCount = db
+  .prepare(
+    "SELECT COUNT(*) AS count FROM clients"
+  )
+  .get().count;
+
+if (clientCount === 0) {
+  const insertClient = db.prepare(`
+    INSERT INTO clients
+      (name, email, phone, company, notes)
+    VALUES
+      (?, ?, ?, ?, ?)
+  `);
+
+  const clientResult = insertClient.run(
+    "Noor Fatima",
+    "noor@example.com",
+    "",
+    "Freelance Business",
+    "Demo client"
+  );
+
+  const insertProject = db.prepare(`
+    INSERT INTO projects
+      (name, description, client_id, status, deadline)
+    VALUES
+      (?, ?, ?, ?, ?)
+  `);
+
+  const projectResult = insertProject.run(
+    "Client Website Project",
+    "Website development project for client",
+    clientResult.lastInsertRowid,
+    "in-progress",
+    "2026-10-15"
+  );
+
+  const insertTask = db.prepare(`
+    INSERT INTO tasks
+      (title, description, project_id, status, priority, deadline)
+    VALUES
+      (?, ?, ?, ?, ?, ?)
+  `);
+
+  insertTask.run(
+    "Complete AI Assistant",
+    "Finish and test the freelance business assistant",
+    projectResult.lastInsertRowid,
+    "completed",
+    "high",
+    "2026-09-05"
+  );
+}
+
+// ======================================================
+// MIDDLEWARE
+// ======================================================
+
+app.use(
+  cors({
+    origin: true,
+    credentials: true,
+  })
+);
+
+app.use(
+  express.json({
+    limit: "1mb",
+  })
+);
+
+// ======================================================
+// RATE LIMITING
+// ======================================================
+
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 100,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+
+  message: {
+    error:
+      "Too many requests. Please try again later.",
+  },
+});
+
+app.use("/api", apiLimiter);
+
+// ======================================================
+// SWAGGER CONFIGURATION
+// ======================================================
+
+const swaggerOptions = {
+  definition: {
+    openapi: "3.0.0",
+
+    info: {
+      title: appName,
+      version: "1.0.0",
+      description:
+        "API documentation for the AI Freelance Business Assistant.",
+    },
+
+    servers: [
+      {
+        url:
+          process.env.API_BASE_URL ||
+          `http://localhost:${PORT}`,
+        description:
+          "Local development server",
+      },
+    ],
+
+    components: {
+      securitySchemes: {
+        bearerAuth: {
+          type: "http",
+          scheme: "bearer",
+          bearerFormat: "JWT",
+        },
+      },
+    },
+
+    paths: {
+      "/": {
+        get: {
+          summary: "API health check",
+
+          responses: {
+            200: {
+              description:
+                "API is running successfully.",
+            },
+          },
+        },
+      },
+
+      "/api/auth/signup": {
+        post: {
+          summary:
+            "Create a new user account",
+
+          requestBody: {
+            required: true,
+
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+
+                  required: [
+                    "name",
+                    "email",
+                    "password",
+                  ],
+
+                  properties: {
+                    name: {
+                      type: "string",
+                      example: "Noor Fatima",
+                    },
+
+                    email: {
+                      type: "string",
+                      format: "email",
+                      example:
+                        "noor@example.com",
+                    },
+
+                    password: {
+                      type: "string",
+                      format: "password",
+                      example: "demo123",
+                    },
+                  },
+                },
+              },
+            },
+          },
+
+          responses: {
+            201: {
+              description:
+                "Signup successful.",
+            },
+
+            400: {
+              description:
+                "Invalid signup information.",
+            },
+
+            409: {
+              description:
+                "User already exists.",
+            },
+
+            500: {
+              description:
+                "Unable to create account.",
+            },
+          },
+        },
+      },
+
+      "/api/auth/login": {
+        post: {
+          summary: "Login user",
+
+          requestBody: {
+            required: true,
+
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+
+                  required: [
+                    "email",
+                    "password",
+                  ],
+
+                  properties: {
+                    email: {
+                      type: "string",
+                      format: "email",
+                      example:
+                        "noor@example.com",
+                    },
+
+                    password: {
+                      type: "string",
+                      format: "password",
+                      example: "demo123",
+                    },
+                  },
+                },
+              },
+            },
+          },
+
+          responses: {
+            200: {
+              description:
+                "Login successful.",
+            },
+
+            400: {
+              description:
+                "Email and password are required.",
+            },
+
+            401: {
+              description:
+                "Invalid email or password.",
+            },
+
+            500: {
+              description:
+                "Unable to login.",
+            },
+          },
+        },
+      },
+
+      "/api/auth/profile": {
+        get: {
+          summary:
+            "Get authenticated user profile",
+
+          security: [
+            {
+              bearerAuth: [],
+            },
+          ],
+
+          responses: {
+            200: {
+              description:
+                "Authenticated profile returned.",
+            },
+
+            401: {
+              description:
+                "Authentication token is missing or invalid.",
+            },
+
+            404: {
+              description:
+                "User not found.",
+            },
+          },
+        },
+      },
+
+      "/api/dashboard": {
+        get: {
+          summary:
+            "Get freelance business dashboard",
+
+          responses: {
+            200: {
+              description:
+                "Dashboard statistics returned.",
+            },
+
+            500: {
+              description:
+                "Unable to load dashboard.",
+            },
+          },
+        },
+      },
+
+      "/api/clients": {
+        get: {
+          summary: "Get all clients",
+
+          responses: {
+            200: {
+              description:
+                "Clients returned successfully.",
+            },
+          },
+        },
+      },
+
+      "/api/projects": {
+        get: {
+          summary: "Get all projects",
+
+          responses: {
+            200: {
+              description:
+                "Projects returned successfully.",
+            },
+          },
+        },
+      },
+
+      "/api/tasks": {
+        get: {
+          summary: "Get all tasks",
+
+          responses: {
+            200: {
+              description:
+                "Tasks returned successfully.",
+            },
+          },
+        },
+      },
+
+      "/api/assistant": {
+        post: {
+          summary:
+            "Ask the AI Freelance Business Assistant",
+
+          requestBody: {
+            required: true,
+
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+
+                  required: [
+                    "message",
+                  ],
+
+                  properties: {
+                    message: {
+                      type: "string",
+                      example:
+                        "What should I focus on next?",
+                    },
+                  },
+                },
+              },
+            },
+          },
+
+          responses: {
+            200: {
+              description:
+                "Assistant response returned.",
+            },
+
+            400: {
+              description:
+                "Message is required.",
+            },
+
+            500: {
+              description:
+                "Unable to process assistant request.",
+            },
+          },
+        },
+      },
+    },
+  },
+
+  apis: [],
+};
+
+const swaggerSpec =
+  swaggerJsdoc(swaggerOptions);
+
+// ======================================================
+// SWAGGER ROUTES
+// ======================================================
+
+app.get("/swagger.json", (req, res) => {
+  res.json(swaggerSpec);
+});
+
+app.use(
+  "/api-docs",
+  swaggerUi.serve,
+  swaggerUi.setup(swaggerSpec, {
+    explorer: true,
+  })
+);
 
 // ======================================================
 // HEALTH CHECK
@@ -13,821 +559,1265 @@ app.use(express.json());
 
 app.get("/", (req, res) => {
   res.json({
-    message: "AI Freelance Business Assistant API is running"
+    message:
+      `${appName} is running`,
+    status: "ok",
+    version: "1.0.0",
   });
 });
 
 // ======================================================
-// LOGIN
+// AUTH - SIGNUP
 // ======================================================
 
-app.post("/api/login", (req, res) => {
-  const { email } = req.body || {};
+app.post(
+  "/api/auth/signup",
+  (req, res) => {
+    try {
+      const name = String(
+        req.body?.name || ""
+      ).trim();
 
-  if (!email) {
-    return res.status(400).json({
-      error: "Email is required"
-    });
-  }
+      const email = String(
+        req.body?.email || ""
+      )
+        .trim()
+        .toLowerCase();
 
-  const user = {
-    id: 1,
-    email: email
-  };
+      const password = String(
+        req.body?.password || ""
+      );
 
-  const token = generateToken(user);
+      if (
+        !name ||
+        !email ||
+        !password
+      ) {
+        return res.status(400).json({
+          error:
+            "Name, email and password are required.",
+        });
+      }
 
-  res.json({
-    message: "Login successful",
-    token: token
-  });
-});
+      if (
+        name.length < 2
+      ) {
+        return res.status(400).json({
+          error:
+            "Name must contain at least 2 characters.",
+        });
+      }
 
-// ======================================================
-// CLIENTS
-// ======================================================
+      const emailRegex =
+        /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-// GET ALL CLIENTS
+      if (!emailRegex.test(email)) {
+        return res.status(400).json({
+          error:
+            "Please provide a valid email address.",
+        });
+      }
 
-app.get("/api/clients", authenticateToken, (req, res) => {
-  const clients = db
-    .prepare("SELECT * FROM clients ORDER BY id DESC")
-    .all();
+      if (
+        password.length < 6
+      ) {
+        return res.status(400).json({
+          error:
+            "Password must be at least 6 characters.",
+        });
+      }
 
-  res.json({
-    message: "Clients retrieved successfully",
-    clients: clients
-  });
-});
+      const existingUser =
+        db
+          .prepare(
+            "SELECT id FROM users WHERE email = ?"
+          )
+          .get(email);
 
-// GET SINGLE CLIENT
+      if (existingUser) {
+        return res.status(409).json({
+          error:
+            "User already exists.",
+        });
+      }
 
-app.get("/api/clients/:id", authenticateToken, (req, res) => {
-  const client = db
-    .prepare("SELECT * FROM clients WHERE id = ?")
-    .get(req.params.id);
+      const hashedPassword =
+        hashPassword(password);
 
-  if (!client) {
-    return res.status(404).json({
-      error: "Client not found"
-    });
-  }
+      const result =
+        db
+          .prepare(`
+            INSERT INTO users
+              (name, email, password)
+            VALUES
+              (?, ?, ?)
+          `)
+          .run(
+            name,
+            email,
+            hashedPassword
+          );
 
-  res.json({
-    message: "Client retrieved successfully",
-    client: client
-  });
-});
+      const user = {
+        id: Number(
+          result.lastInsertRowid
+        ),
+        name,
+        email,
+      };
 
-// CREATE CLIENT
+      const token =
+        generateToken(user);
 
-app.post("/api/clients", authenticateToken, (req, res) => {
-  const {
-    name,
-    email,
-    project,
-    deadline
-  } = req.body || {};
+      return res.status(201).json({
+        message:
+          "Signup successful.",
+        token,
+        user,
+      });
+    } catch (error) {
+      console.error(
+        "Signup error:",
+        error
+      );
 
-  if (!name) {
-    return res.status(400).json({
-      error: "Client name is required"
-    });
-  }
-
-  const result = db
-    .prepare(
-      "INSERT INTO clients (name, email, project, deadline) VALUES (?, ?, ?, ?)"
-    )
-    .run(
-      name,
-      email || null,
-      project || null,
-      deadline || null
-    );
-
-  const client = db
-    .prepare("SELECT * FROM clients WHERE id = ?")
-    .get(result.lastInsertRowid);
-
-  res.status(201).json({
-    message: "Client created successfully",
-    client: client
-  });
-});
-
-// UPDATE CLIENT
-
-app.put("/api/clients/:id", authenticateToken, (req, res) => {
-  const existingClient = db
-    .prepare("SELECT * FROM clients WHERE id = ?")
-    .get(req.params.id);
-
-  if (!existingClient) {
-    return res.status(404).json({
-      error: "Client not found"
-    });
-  }
-
-  const {
-    name,
-    email,
-    project,
-    deadline
-  } = req.body || {};
-
-  const updatedName =
-    name !== undefined
-      ? name
-      : existingClient.name;
-
-  const updatedEmail =
-    email !== undefined
-      ? email
-      : existingClient.email;
-
-  const updatedProject =
-    project !== undefined
-      ? project
-      : existingClient.project;
-
-  const updatedDeadline =
-    deadline !== undefined
-      ? deadline
-      : existingClient.deadline;
-
-  db.prepare(
-    "UPDATE clients SET name = ?, email = ?, project = ?, deadline = ? WHERE id = ?"
-  ).run(
-    updatedName,
-    updatedEmail,
-    updatedProject,
-    updatedDeadline,
-    req.params.id
-  );
-
-  const client = db
-    .prepare("SELECT * FROM clients WHERE id = ?")
-    .get(req.params.id);
-
-  res.json({
-    message: "Client updated successfully",
-    client: client
-  });
-});
-
-// DELETE CLIENT
-
-app.delete("/api/clients/:id", authenticateToken, (req, res) => {
-  const existingClient = db
-    .prepare("SELECT * FROM clients WHERE id = ?")
-    .get(req.params.id);
-
-  if (!existingClient) {
-    return res.status(404).json({
-      error: "Client not found"
-    });
-  }
-
-  db.prepare(
-    "DELETE FROM clients WHERE id = ?"
-  ).run(req.params.id);
-
-  res.json({
-    message: "Client deleted successfully",
-    client: existingClient
-  });
-});
-
-// ======================================================
-// PROJECTS
-// ======================================================
-
-// GET ALL PROJECTS
-
-app.get("/api/projects", authenticateToken, (req, res) => {
-  const projects = db
-    .prepare(
-      "SELECT projects.*, clients.name AS client_name FROM projects LEFT JOIN clients ON projects.client_id = clients.id ORDER BY projects.id DESC"
-    )
-    .all();
-
-  res.json({
-    message: "Projects retrieved successfully",
-    projects: projects
-  });
-});
-
-// GET SINGLE PROJECT
-
-app.get("/api/projects/:id", authenticateToken, (req, res) => {
-  const project = db
-    .prepare(
-      "SELECT projects.*, clients.name AS client_name FROM projects LEFT JOIN clients ON projects.client_id = clients.id WHERE projects.id = ?"
-    )
-    .get(req.params.id);
-
-  if (!project) {
-    return res.status(404).json({
-      error: "Project not found"
-    });
-  }
-
-  res.json({
-    message: "Project retrieved successfully",
-    project: project
-  });
-});
-
-// CREATE PROJECT
-
-app.post("/api/projects", authenticateToken, (req, res) => {
-  const {
-    name,
-    description,
-    status,
-    deadline,
-    client_id
-  } = req.body || {};
-
-  if (!name) {
-    return res.status(400).json({
-      error: "Project name is required"
-    });
-  }
-
-  if (
-    client_id !== undefined &&
-    client_id !== null
-  ) {
-    const client = db
-      .prepare("SELECT id FROM clients WHERE id = ?")
-      .get(client_id);
-
-    if (!client) {
-      return res.status(404).json({
-        error: "Client not found"
+      return res.status(500).json({
+        error:
+          "Unable to create account.",
       });
     }
   }
-
-  const result = db
-    .prepare(
-      "INSERT INTO projects (name, description, status, deadline, client_id) VALUES (?, ?, ?, ?, ?)"
-    )
-    .run(
-      name,
-      description || null,
-      status || "pending",
-      deadline || null,
-      client_id || null
-    );
-
-  const project = db
-    .prepare(
-      "SELECT projects.*, clients.name AS client_name FROM projects LEFT JOIN clients ON projects.client_id = clients.id WHERE projects.id = ?"
-    )
-    .get(result.lastInsertRowid);
-
-  res.status(201).json({
-    message: "Project created successfully",
-    project: project
-  });
-});
-
-// UPDATE PROJECT
-
-app.put("/api/projects/:id", authenticateToken, (req, res) => {
-  const existingProject = db
-    .prepare("SELECT * FROM projects WHERE id = ?")
-    .get(req.params.id);
-
-  if (!existingProject) {
-    return res.status(404).json({
-      error: "Project not found"
-    });
-  }
-
-  const {
-    name,
-    description,
-    status,
-    deadline,
-    client_id
-  } = req.body || {};
-
-  if (
-    client_id !== undefined &&
-    client_id !== null
-  ) {
-    const client = db
-      .prepare("SELECT id FROM clients WHERE id = ?")
-      .get(client_id);
-
-    if (!client) {
-      return res.status(404).json({
-        error: "Client not found"
-      });
-    }
-  }
-
-  const updatedName =
-    name !== undefined
-      ? name
-      : existingProject.name;
-
-  const updatedDescription =
-    description !== undefined
-      ? description
-      : existingProject.description;
-
-  const updatedStatus =
-    status !== undefined
-      ? status
-      : existingProject.status;
-
-  const updatedDeadline =
-    deadline !== undefined
-      ? deadline
-      : existingProject.deadline;
-
-  const updatedClientId =
-    client_id !== undefined
-      ? client_id
-      : existingProject.client_id;
-
-  db.prepare(
-    "UPDATE projects SET name = ?, description = ?, status = ?, deadline = ?, client_id = ? WHERE id = ?"
-  ).run(
-    updatedName,
-    updatedDescription,
-    updatedStatus,
-    updatedDeadline,
-    updatedClientId,
-    req.params.id
-  );
-
-  const project = db
-    .prepare(
-      "SELECT projects.*, clients.name AS client_name FROM projects LEFT JOIN clients ON projects.client_id = clients.id WHERE projects.id = ?"
-    )
-    .get(req.params.id);
-
-  res.json({
-    message: "Project updated successfully",
-    project: project
-  });
-});
-
-// DELETE PROJECT
-
-app.delete("/api/projects/:id", authenticateToken, (req, res) => {
-  const existingProject = db
-    .prepare("SELECT * FROM projects WHERE id = ?")
-    .get(req.params.id);
-
-  if (!existingProject) {
-    return res.status(404).json({
-      error: "Project not found"
-    });
-  }
-
-  db.prepare(
-    "DELETE FROM projects WHERE id = ?"
-  ).run(req.params.id);
-
-  res.json({
-    message: "Project deleted successfully",
-    project: existingProject
-  });
-});
+);
 
 // ======================================================
-// TASKS
+// AUTH - LOGIN
 // ======================================================
 
-// GET ALL TASKS
+app.post(
+  "/api/auth/login",
+  (req, res) => {
+    try {
+      const email = String(
+        req.body?.email || ""
+      )
+        .trim()
+        .toLowerCase();
 
-app.get("/api/tasks", authenticateToken, (req, res) => {
-  const tasks = db
-    .prepare(
-      "SELECT tasks.*, projects.name AS project_name FROM tasks LEFT JOIN projects ON tasks.project_id = projects.id ORDER BY tasks.id DESC"
-    )
-    .all();
+      const password = String(
+        req.body?.password || ""
+      );
 
-  res.json({
-    message: "Tasks retrieved successfully",
-    tasks: tasks
-  });
-});
+      if (
+        !email ||
+        !password
+      ) {
+        return res.status(400).json({
+          error:
+            "Email and password are required.",
+        });
+      }
 
-// GET SINGLE TASK
+      const user =
+        db
+          .prepare(`
+            SELECT
+              id,
+              name,
+              email,
+              password
+            FROM users
+            WHERE email = ?
+          `)
+          .get(email);
 
-app.get("/api/tasks/:id", authenticateToken, (req, res) => {
-  const task = db
-    .prepare(
-      "SELECT tasks.*, projects.name AS project_name FROM tasks LEFT JOIN projects ON tasks.project_id = projects.id WHERE tasks.id = ?"
-    )
-    .get(req.params.id);
+      if (!user) {
+        return res.status(401).json({
+          error:
+            "Invalid email or password.",
+        });
+      }
 
-  if (!task) {
-    return res.status(404).json({
-      error: "Task not found"
-    });
-  }
+      const hashedPassword =
+        hashPassword(password);
 
-  res.json({
-    message: "Task retrieved successfully",
-    task: task
-  });
-});
+      if (
+        hashedPassword !==
+        user.password
+      ) {
+        return res.status(401).json({
+          error:
+            "Invalid email or password.",
+        });
+      }
 
-// CREATE TASK
+      const safeUser = {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+      };
 
-app.post("/api/tasks", authenticateToken, (req, res) => {
-  const {
-    title,
-    description,
-    status,
-    priority,
-    deadline,
-    project_id
-  } = req.body || {};
+      const token =
+        generateToken(safeUser);
 
-  if (!title) {
-    return res.status(400).json({
-      error: "Task title is required"
-    });
-  }
+      return res.json({
+        message:
+          "Login successful.",
+        token,
+        user: safeUser,
+      });
+    } catch (error) {
+      console.error(
+        "Login error:",
+        error
+      );
 
-  if (
-    project_id !== undefined &&
-    project_id !== null
-  ) {
-    const project = db
-      .prepare("SELECT id FROM projects WHERE id = ?")
-      .get(project_id);
-
-    if (!project) {
-      return res.status(404).json({
-        error: "Project not found"
+      return res.status(500).json({
+        error:
+          "Unable to login.",
       });
     }
   }
+);
 
-  const result = db
-    .prepare(
-      "INSERT INTO tasks (title, description, status, priority, deadline, project_id) VALUES (?, ?, ?, ?, ?, ?)"
-    )
-    .run(
-      title,
-      description || null,
-      status || "pending",
-      priority || "medium",
-      deadline || null,
-      project_id || null
-    );
+// ======================================================
+// AUTH - PROFILE
+// ======================================================
 
-  const task = db
-    .prepare(
-      "SELECT tasks.*, projects.name AS project_name FROM tasks LEFT JOIN projects ON tasks.project_id = projects.id WHERE tasks.id = ?"
-    )
-    .get(result.lastInsertRowid);
+app.get(
+  "/api/auth/profile",
+  authenticateToken,
+  (req, res) => {
+    try {
+      const user =
+        db
+          .prepare(`
+            SELECT
+              id,
+              name,
+              email,
+              created_at
+            FROM users
+            WHERE id = ?
+          `)
+          .get(req.user.id);
 
-  res.status(201).json({
-    message: "Task created successfully",
-    task: task
-  });
-});
+      if (!user) {
+        return res.status(404).json({
+          error:
+            "User not found.",
+        });
+      }
 
-// UPDATE TASK
+      return res.json({
+        user,
+      });
+    } catch (error) {
+      console.error(
+        "Profile error:",
+        error
+      );
 
-app.put("/api/tasks/:id", authenticateToken, (req, res) => {
-  const existingTask = db
-    .prepare("SELECT * FROM tasks WHERE id = ?")
-    .get(req.params.id);
-
-  if (!existingTask) {
-    return res.status(404).json({
-      error: "Task not found"
-    });
-  }
-
-  const {
-    title,
-    description,
-    status,
-    priority,
-    deadline,
-    project_id
-  } = req.body || {};
-
-  if (
-    project_id !== undefined &&
-    project_id !== null
-  ) {
-    const project = db
-      .prepare("SELECT id FROM projects WHERE id = ?")
-      .get(project_id);
-
-    if (!project) {
-      return res.status(404).json({
-        error: "Project not found"
+      return res.status(500).json({
+        error:
+          "Unable to load profile.",
       });
     }
   }
-
-  const updatedTitle =
-    title !== undefined
-      ? title
-      : existingTask.title;
-
-  const updatedDescription =
-    description !== undefined
-      ? description
-      : existingTask.description;
-
-  const updatedStatus =
-    status !== undefined
-      ? status
-      : existingTask.status;
-
-  const updatedPriority =
-    priority !== undefined
-      ? priority
-      : existingTask.priority;
-
-  const updatedDeadline =
-    deadline !== undefined
-      ? deadline
-      : existingTask.deadline;
-
-  const updatedProjectId =
-    project_id !== undefined
-      ? project_id
-      : existingTask.project_id;
-
-  db.prepare(
-    "UPDATE tasks SET title = ?, description = ?, status = ?, priority = ?, deadline = ?, project_id = ? WHERE id = ?"
-  ).run(
-    updatedTitle,
-    updatedDescription,
-    updatedStatus,
-    updatedPriority,
-    updatedDeadline,
-    updatedProjectId,
-    req.params.id
-  );
-
-  const task = db
-    .prepare(
-      "SELECT tasks.*, projects.name AS project_name FROM tasks LEFT JOIN projects ON tasks.project_id = projects.id WHERE tasks.id = ?"
-    )
-    .get(req.params.id);
-
-  res.json({
-    message: "Task updated successfully",
-    task: task
-  });
-});
-
-// DELETE TASK
-
-app.delete("/api/tasks/:id", authenticateToken, (req, res) => {
-  const existingTask = db
-    .prepare("SELECT * FROM tasks WHERE id = ?")
-    .get(req.params.id);
-
-  if (!existingTask) {
-    return res.status(404).json({
-      error: "Task not found"
-    });
-  }
-
-  db.prepare(
-    "DELETE FROM tasks WHERE id = ?"
-  ).run(req.params.id);
-
-  res.json({
-    message: "Task deleted successfully",
-    task: existingTask
-  });
-});
+);
 
 // ======================================================
 // DASHBOARD
 // ======================================================
 
-app.get("/api/dashboard", authenticateToken, (req, res) => {
-  const totalClients = db
-    .prepare(
-      "SELECT COUNT(*) AS count FROM clients"
-    )
-    .get().count;
+app.get(
+  "/api/dashboard",
+  (req, res) => {
+    try {
+      const totalClients =
+        db
+          .prepare(
+            "SELECT COUNT(*) AS count FROM clients"
+          )
+          .get().count;
 
-  const totalProjects = db
-    .prepare(
-      "SELECT COUNT(*) AS count FROM projects"
-    )
-    .get().count;
+      const totalProjects =
+        db
+          .prepare(
+            "SELECT COUNT(*) AS count FROM projects"
+          )
+          .get().count;
 
-  const totalTasks = db
-    .prepare(
-      "SELECT COUNT(*) AS count FROM tasks"
-    )
-    .get().count;
+      const totalTasks =
+        db
+          .prepare(
+            "SELECT COUNT(*) AS count FROM tasks"
+          )
+          .get().count;
 
-  const pendingTasks = db
-    .prepare(
-      "SELECT COUNT(*) AS count FROM tasks WHERE status = 'pending'"
-    )
-    .get().count;
+      const pendingTasks =
+        db
+          .prepare(`
+            SELECT COUNT(*) AS count
+            FROM tasks
+            WHERE LOWER(status) = 'pending'
+          `)
+          .get().count;
 
-  const inProgressTasks = db
-    .prepare(
-      "SELECT COUNT(*) AS count FROM tasks WHERE status = 'in-progress'"
-    )
-    .get().count;
+      const inProgressTasks =
+        db
+          .prepare(`
+            SELECT COUNT(*) AS count
+            FROM tasks
+            WHERE LOWER(status) IN
+              ('in-progress', 'in progress')
+          `)
+          .get().count;
 
-  const completedTasks = db
-    .prepare(
-      "SELECT COUNT(*) AS count FROM tasks WHERE status = 'completed'"
-    )
-    .get().count;
+      const completedTasks =
+        db
+          .prepare(`
+            SELECT COUNT(*) AS count
+            FROM tasks
+            WHERE LOWER(status) = 'completed'
+          `)
+          .get().count;
 
-  const upcomingTasks = db
-    .prepare(
-      "SELECT tasks.id, tasks.title, tasks.deadline, tasks.status, tasks.priority, projects.name AS project_name FROM tasks LEFT JOIN projects ON tasks.project_id = projects.id WHERE tasks.deadline IS NOT NULL AND tasks.deadline >= date('now') AND tasks.status != 'completed' ORDER BY tasks.deadline ASC LIMIT 5"
-    )
-    .all();
+      const highPriorityTasks =
+        db
+          .prepare(`
+            SELECT COUNT(*) AS count
+            FROM tasks
+            WHERE LOWER(priority) = 'high'
+              AND LOWER(status) != 'completed'
+          `)
+          .get().count;
 
-  res.json({
-    message: "Dashboard retrieved successfully",
+      const tasks =
+        db
+          .prepare(`
+            SELECT
+              tasks.*,
+              projects.name AS project_name
+            FROM tasks
+            LEFT JOIN projects
+              ON tasks.project_id = projects.id
+            ORDER BY
+              CASE
+                WHEN LOWER(tasks.status) = 'pending'
+                  THEN 1
 
-    summary: {
-      totalClients: totalClients,
-      totalProjects: totalProjects,
-      totalTasks: totalTasks,
-      pendingTasks: pendingTasks,
-      inProgressTasks: inProgressTasks,
-      completedTasks: completedTasks
-    },
+                WHEN LOWER(tasks.status) IN
+                  ('in-progress', 'in progress')
+                  THEN 2
 
-    upcomingTasks: upcomingTasks
-  });
-});
+                ELSE 3
+              END,
+              CASE
+                WHEN LOWER(tasks.priority) = 'high'
+                  THEN 1
+
+                WHEN LOWER(tasks.priority) = 'medium'
+                  THEN 2
+
+                ELSE 3
+              END,
+              tasks.deadline ASC
+          `)
+          .all();
+
+      return res.json({
+        totalClients,
+        totalProjects,
+        totalTasks,
+        pendingTasks,
+        inProgressTasks,
+        completedTasks,
+        highPriorityTasks,
+        tasks,
+      });
+    } catch (error) {
+      console.error(
+        "Dashboard error:",
+        error
+      );
+
+      return res.status(500).json({
+        error:
+          "Unable to load dashboard.",
+      });
+    }
+  }
+);
+
+// ======================================================
+// CLIENTS
+// ======================================================
+
+app.get(
+  "/api/clients",
+  (req, res) => {
+    try {
+      const clients =
+        db
+          .prepare(`
+            SELECT
+              *
+            FROM clients
+            ORDER BY id DESC
+          `)
+          .all();
+
+      return res.json({
+        clients,
+      });
+    } catch (error) {
+      console.error(
+        "Clients error:",
+        error
+      );
+
+      return res.status(500).json({
+        error:
+          "Unable to load clients.",
+      });
+    }
+  }
+);
+
+// ======================================================
+// PROJECTS
+// ======================================================
+
+app.get(
+  "/api/projects",
+  (req, res) => {
+    try {
+      const projects =
+        db
+          .prepare(`
+            SELECT
+              projects.*,
+              clients.name AS client_name
+            FROM projects
+            LEFT JOIN clients
+              ON projects.client_id =
+                 clients.id
+            ORDER BY projects.id DESC
+          `)
+          .all();
+
+      return res.json({
+        projects,
+      });
+    } catch (error) {
+      console.error(
+        "Projects error:",
+        error
+      );
+
+      return res.status(500).json({
+        error:
+          "Unable to load projects.",
+      });
+    }
+  }
+);
+
+// ======================================================
+// TASKS
+// ======================================================
+
+app.get(
+  "/api/tasks",
+  (req, res) => {
+    try {
+      const tasks =
+        db
+          .prepare(`
+            SELECT
+              tasks.*,
+              projects.name AS project_name
+            FROM tasks
+            LEFT JOIN projects
+              ON tasks.project_id =
+                 projects.id
+            ORDER BY
+              CASE
+                WHEN LOWER(tasks.status) =
+                     'pending'
+                  THEN 1
+
+                WHEN LOWER(tasks.status) IN
+                     ('in-progress',
+                      'in progress')
+                  THEN 2
+
+                ELSE 3
+              END,
+              tasks.deadline ASC,
+              tasks.id DESC
+          `)
+          .all();
+
+      return res.json({
+        tasks,
+      });
+    } catch (error) {
+      console.error(
+        "Tasks error:",
+        error
+      );
+
+      return res.status(500).json({
+        error:
+          "Unable to load tasks.",
+      });
+    }
+  }
+);
 
 // ======================================================
 // AI BUSINESS ASSISTANT
 // ======================================================
 
-app.post("/api/assistant", authenticateToken, (req, res) => {
-  const { message } = req.body || {};
+app.post(
+  "/api/assistant",
+  (req, res) => {
+    try {
+      const rawMessage =
+        String(
+          req.body?.message || ""
+        ).trim();
 
-  if (!message || !message.trim()) {
-    return res.status(400).json({
-      error: "Message is required"
+      if (!rawMessage) {
+        return res.status(400).json({
+          error:
+            "Message is required.",
+        });
+      }
+
+      const message =
+        rawMessage
+          .toLowerCase()
+          .replace(/[?!.,]/g, " ")
+          .replace(/\s+/g, " ")
+          .trim();
+
+      // ==================================================
+      // BUSINESS STATISTICS
+      // ==================================================
+
+      const totalClients =
+        db
+          .prepare(
+            "SELECT COUNT(*) AS count FROM clients"
+          )
+          .get().count;
+
+      const totalProjects =
+        db
+          .prepare(
+            "SELECT COUNT(*) AS count FROM projects"
+          )
+          .get().count;
+
+      const totalTasks =
+        db
+          .prepare(
+            "SELECT COUNT(*) AS count FROM tasks"
+          )
+          .get().count;
+
+      const pendingTasks =
+        db
+          .prepare(`
+            SELECT COUNT(*) AS count
+            FROM tasks
+            WHERE LOWER(status) = 'pending'
+          `)
+          .get().count;
+
+      const inProgressTasks =
+        db
+          .prepare(`
+            SELECT COUNT(*) AS count
+            FROM tasks
+            WHERE LOWER(status) IN
+              ('in-progress', 'in progress')
+          `)
+          .get().count;
+
+      const completedTasks =
+        db
+          .prepare(`
+            SELECT COUNT(*) AS count
+            FROM tasks
+            WHERE LOWER(status) = 'completed'
+          `)
+          .get().count;
+
+      const highPriorityTasks =
+        db
+          .prepare(`
+            SELECT COUNT(*) AS count
+            FROM tasks
+            WHERE LOWER(priority) = 'high'
+              AND LOWER(status) != 'completed'
+          `)
+          .get().count;
+
+      const activeTasks =
+        db
+          .prepare(`
+            SELECT COUNT(*) AS count
+            FROM tasks
+            WHERE LOWER(status) != 'completed'
+          `)
+          .get().count;
+
+      let response = "";
+
+      // ==================================================
+      // UPCOMING DEADLINES
+      // ==================================================
+
+      if (
+        message.includes("deadline") ||
+        message.includes("deadlines") ||
+        message.includes("due") ||
+        message.includes("due date")
+      ) {
+        const upcomingDeadlines =
+          db
+            .prepare(`
+              SELECT
+                tasks.title,
+                tasks.deadline,
+                tasks.status,
+                tasks.priority,
+                projects.name AS project_name
+              FROM tasks
+              LEFT JOIN projects
+                ON tasks.project_id =
+                   projects.id
+              WHERE
+                tasks.deadline IS NOT NULL
+                AND TRIM(tasks.deadline) != ''
+                AND LOWER(tasks.status) !=
+                    'completed'
+              ORDER BY
+                tasks.deadline ASC
+            `)
+            .all();
+
+        if (
+          upcomingDeadlines.length ===
+          0
+        ) {
+          response =
+            "You currently have no upcoming deadlines for active tasks.\n\n" +
+            "Your completed tasks are up to date. " +
+            "You can focus on project progress, " +
+            "client communication, and business growth.";
+        } else {
+          response =
+            "Your upcoming deadlines:\n\n" +
+            upcomingDeadlines
+              .map(
+                (task, index) =>
+                  `${index + 1}. ${task.title}\n` +
+                  `Deadline: ${task.deadline}\n` +
+                  `Priority: ${task.priority}\n` +
+                  `Status: ${task.status}\n` +
+                  `Project: ${
+                    task.project_name ||
+                    "No project"
+                  }`
+              )
+              .join("\n\n") +
+            "\n\nFocus first on the task with the closest deadline.";
+        }
+      }
+
+      // ==================================================
+      // HIGH PRIORITY TASKS
+      // ==================================================
+
+      else if (
+        message.includes("high priority") ||
+        message.includes("high-priority") ||
+        message.includes("urgent")
+      ) {
+        const highPriority =
+          db
+            .prepare(`
+              SELECT
+                tasks.title,
+                tasks.description,
+                tasks.status,
+                tasks.priority,
+                tasks.deadline,
+                projects.name AS project_name
+              FROM tasks
+              LEFT JOIN projects
+                ON tasks.project_id =
+                   projects.id
+              WHERE
+                LOWER(tasks.priority) =
+                  'high'
+                AND LOWER(tasks.status) !=
+                  'completed'
+              ORDER BY
+                tasks.deadline ASC
+            `)
+            .all();
+
+        if (
+          highPriority.length === 0
+        ) {
+          response =
+            "You currently have no active high-priority tasks.\n\n" +
+            "Your workload looks organized. " +
+            "You can focus on project progress, " +
+            "client communication, and business growth.";
+        } else {
+          response =
+            `You have ${highPriority.length} active high-priority task(s):\n\n` +
+            highPriority
+              .map(
+                (task, index) =>
+                  `${index + 1}. ${task.title}\n` +
+                  `Status: ${task.status}\n` +
+                  `Priority: ${task.priority}\n` +
+                  `Deadline: ${
+                    task.deadline ||
+                    "No deadline"
+                  }\n` +
+                  `Project: ${
+                    task.project_name ||
+                    "No project"
+                  }`
+              )
+              .join("\n\n") +
+            "\n\nThese tasks should receive attention before lower-priority work.";
+        }
+      }
+
+      // ==================================================
+      // PENDING TASKS
+      // ==================================================
+
+      else if (
+        message.includes("pending task") ||
+        message.includes("pending tasks") ||
+        message.includes("unfinished task") ||
+        message.includes("unfinished tasks")
+      ) {
+        const pending =
+          db
+            .prepare(`
+              SELECT
+                tasks.title,
+                tasks.status,
+                tasks.priority,
+                tasks.deadline,
+                projects.name AS project_name
+              FROM tasks
+              LEFT JOIN projects
+                ON tasks.project_id =
+                   projects.id
+              WHERE LOWER(tasks.status) =
+                    'pending'
+              ORDER BY
+                tasks.deadline ASC
+            `)
+            .all();
+
+        if (
+          pending.length === 0
+        ) {
+          response =
+            "You currently have no pending tasks.\n\n" +
+            "Your task list is up to date.";
+        } else {
+          response =
+            `You have ${pending.length} pending task(s):\n\n` +
+            pending
+              .map(
+                (task, index) =>
+                  `${index + 1}. ${task.title}\n` +
+                  `Priority: ${task.priority}\n` +
+                  `Deadline: ${
+                    task.deadline ||
+                    "No deadline"
+                  }\n` +
+                  `Project: ${
+                    task.project_name ||
+                    "No project"
+                  }`
+              )
+              .join("\n\n") +
+            "\n\nStart with the task that has the closest deadline.";
+        }
+      }
+
+      // ==================================================
+      // FOCUS / NEXT
+      // ==================================================
+
+      else if (
+        message.includes("focus") ||
+        message.includes("what should i do") ||
+        message.includes("what should i focus") ||
+        message.includes("next") ||
+        message.includes("first") ||
+        message.includes("prioritize") ||
+        message.includes("priority")
+      ) {
+        if (
+          highPriorityTasks > 0
+        ) {
+          const firstPriority =
+            db
+              .prepare(`
+                SELECT
+                  tasks.title,
+                  tasks.deadline,
+                  tasks.priority,
+                  projects.name AS project_name
+                FROM tasks
+                LEFT JOIN projects
+                  ON tasks.project_id =
+                     projects.id
+                WHERE
+                  LOWER(tasks.priority) =
+                    'high'
+                  AND LOWER(tasks.status) !=
+                    'completed'
+                ORDER BY
+                  tasks.deadline ASC
+                LIMIT 1
+              `)
+              .get();
+
+          response =
+            `Your first priority should be "${firstPriority.title}".\n\n` +
+            `Priority: High\n` +
+            `Deadline: ${
+              firstPriority.deadline ||
+              "No deadline"
+            }\n` +
+            `Project: ${
+              firstPriority.project_name ||
+              "No project"
+            }\n\n` +
+            `You have ${highPriorityTasks} active high-priority task(s). ` +
+            `Complete those before moving to lower-priority work.`;
+        } else if (
+          pendingTasks > 0
+        ) {
+          const firstPending =
+            db
+              .prepare(`
+                SELECT
+                  tasks.title,
+                  tasks.deadline,
+                  tasks.priority,
+                  projects.name AS project_name
+                FROM tasks
+                LEFT JOIN projects
+                  ON tasks.project_id =
+                     projects.id
+                WHERE LOWER(tasks.status) =
+                      'pending'
+                ORDER BY
+                  tasks.deadline ASC
+                LIMIT 1
+              `)
+              .get();
+
+          response =
+            `Your next focus should be "${firstPending.title}".\n\n` +
+            `Priority: ${firstPending.priority}\n` +
+            `Deadline: ${
+              firstPending.deadline ||
+              "No deadline"
+            }\n` +
+            `Project: ${
+              firstPending.project_name ||
+              "No project"
+            }\n\n` +
+            `You currently have ${pendingTasks} pending task(s). ` +
+            `Start with the task having the closest deadline.`;
+        } else if (
+          inProgressTasks > 0
+        ) {
+          response =
+            `Your workload has no pending or high-priority active tasks.\n\n` +
+            `You currently have ${inProgressTasks} in-progress task(s). ` +
+            `Focus on completing those tasks and keeping your project deadlines updated.`;
+        } else {
+          response =
+            "Your current workload looks organized.\n\n" +
+            "You have no pending or high-priority active tasks. " +
+            "You can focus on project progress, client communication, " +
+            "business growth, and preparing for new freelance opportunities.";
+        }
+      }
+
+      // ==================================================
+      // BUSINESS SUMMARY
+      // ==================================================
+
+      else if (
+        message.includes("summary") ||
+        message.includes("business") ||
+        message.includes("overview") ||
+        message.includes("status")
+      ) {
+        response =
+          `Here is your freelance business overview:\n\n` +
+          `Clients: ${totalClients}\n` +
+          `Projects: ${totalProjects}\n` +
+          `Tasks: ${totalTasks}\n\n` +
+          `Pending tasks: ${pendingTasks}\n` +
+          `In-progress tasks: ${inProgressTasks}\n` +
+          `Completed tasks: ${completedTasks}\n` +
+          `High-priority active tasks: ${highPriorityTasks}\n` +
+          `Active tasks: ${activeTasks}\n\n` +
+          `Recommendation:\n\n` +
+          `Prioritize active work according to urgency and deadlines, ` +
+          `keep project information updated, and maintain regular client communication.`;
+      }
+
+      // ==================================================
+      // CLIENTS
+      // ==================================================
+
+      else if (
+        message.includes("client") ||
+        message.includes("clients")
+      ) {
+        const clients =
+          db
+            .prepare(`
+              SELECT
+                name,
+                email,
+                phone,
+                company
+              FROM clients
+              ORDER BY id DESC
+            `)
+            .all();
+
+        response =
+          `You currently have ${totalClients} client(s) in your freelance workspace.\n\n` +
+          (
+            clients.length > 0
+              ? clients
+                  .map(
+                    (client, index) =>
+                      `${index + 1}. ${client.name}\n` +
+                      `Email: ${
+                        client.email ||
+                        "Not provided"
+                      }\n` +
+                      `Phone: ${
+                        client.phone ||
+                        "Not provided"
+                      }\n` +
+                      `Company: ${
+                        client.company ||
+                        "Not provided"
+                      }`
+                  )
+                  .join("\n\n")
+              : "No client records found."
+          ) +
+          "\n\nYou can use the Clients section to review and manage your client records.";
+      }
+
+      // ==================================================
+      // PROJECTS
+      // ==================================================
+
+      else if (
+        message.includes("project") ||
+        message.includes("projects")
+      ) {
+        const projects =
+          db
+            .prepare(`
+              SELECT
+                projects.name,
+                projects.description,
+                projects.status,
+                projects.deadline,
+                clients.name AS client_name
+              FROM projects
+              LEFT JOIN clients
+                ON projects.client_id =
+                   clients.id
+              ORDER BY
+                projects.deadline ASC
+            `)
+            .all();
+
+        response =
+          `You currently have ${totalProjects} project(s).\n\n` +
+          (
+            projects.length > 0
+              ? projects
+                  .map(
+                    (project, index) =>
+                      `${index + 1}. ${project.name}\n` +
+                      `Description: ${
+                        project.description ||
+                        "Not provided"
+                      }\n` +
+                      `Client: ${
+                        project.client_name ||
+                        "No client"
+                      }\n` +
+                      `Status: ${project.status}\n` +
+                      `Deadline: ${
+                        project.deadline ||
+                        "No deadline"
+                      }`
+                  )
+                  .join("\n\n")
+              : "No project records found."
+          ) +
+          "\n\nKeep your active project deadlines updated.";
+      }
+
+      // ==================================================
+      // TASKS
+      // ==================================================
+
+      else if (
+        message.includes("task") ||
+        message.includes("tasks")
+      ) {
+        const tasks =
+          db
+            .prepare(`
+              SELECT
+                tasks.title,
+                tasks.status,
+                tasks.priority,
+                tasks.deadline,
+                projects.name AS project_name
+              FROM tasks
+              LEFT JOIN projects
+                ON tasks.project_id =
+                   projects.id
+              ORDER BY
+                CASE
+                  WHEN LOWER(tasks.status) =
+                       'pending'
+                    THEN 1
+
+                  WHEN LOWER(tasks.status) IN
+                       ('in-progress',
+                        'in progress')
+                    THEN 2
+
+                  ELSE 3
+                END,
+                tasks.deadline ASC
+            `)
+            .all();
+
+        response =
+          `Your current task overview:\n\n` +
+          `Total tasks: ${totalTasks}\n` +
+          `Pending: ${pendingTasks}\n` +
+          `In Progress: ${inProgressTasks}\n` +
+          `Completed: ${completedTasks}\n` +
+          `High-priority active: ${highPriorityTasks}\n\n` +
+          (
+            tasks.length > 0
+              ? tasks
+                  .map(
+                    (task, index) =>
+                      `${index + 1}. ${task.title}\n` +
+                      `Status: ${task.status}\n` +
+                      `Priority: ${task.priority}\n` +
+                      `Deadline: ${
+                        task.deadline ||
+                        "No deadline"
+                      }\n` +
+                      `Project: ${
+                        task.project_name ||
+                        "No project"
+                      }`
+                  )
+                  .join("\n\n")
+              : "No task records found."
+          );
+      }
+
+      // ==================================================
+      // DEFAULT RESPONSE
+      // ==================================================
+
+      else {
+        response =
+          `I can help you understand your freelance business.\n\n` +
+          `Current overview:\n\n` +
+          `Clients: ${totalClients}\n` +
+          `Projects: ${totalProjects}\n` +
+          `Tasks: ${totalTasks}\n` +
+          `Pending: ${pendingTasks}\n` +
+          `In Progress: ${inProgressTasks}\n` +
+          `Completed: ${completedTasks}\n` +
+          `High-priority active: ${highPriorityTasks}\n\n` +
+          `Try asking:\n\n` +
+          `"Give me a summary of my freelance business."\n\n` +
+          `"What should I focus on next?"\n\n` +
+          `"Show me my clients."\n\n` +
+          `"Show me my projects."\n\n` +
+          `"Show me my tasks."\n\n` +
+          `"What are my pending tasks?"\n\n` +
+          `"What are my high priority tasks?"\n\n` +
+          `"What are my upcoming deadlines?"`;
+      }
+
+      return res.json({
+        response,
+      });
+    } catch (error) {
+      console.error(
+        "AI assistant error:",
+        error
+      );
+
+      return res.status(500).json({
+        error:
+          "Unable to process AI assistant request.",
+      });
+    }
+  }
+);
+
+// ======================================================
+// 404 HANDLER
+// ======================================================
+
+app.use(
+  (req, res) => {
+    return res.status(404).json({
+      error: "Route not found",
+      path: req.originalUrl,
     });
   }
+);
 
-  const clients = db
-    .prepare(
-      "SELECT * FROM clients ORDER BY id DESC"
-    )
-    .all();
+// ======================================================
+// GLOBAL ERROR HANDLER
+// ======================================================
 
-  const projects = db
-    .prepare(
-      "SELECT projects.*, clients.name AS client_name FROM projects LEFT JOIN clients ON projects.client_id = clients.id ORDER BY projects.id DESC"
-    )
-    .all();
+app.use(
+  (err, req, res, next) => {
+    console.error(
+      "Unhandled server error:",
+      err
+    );
 
-  const tasks = db
-    .prepare(
-      "SELECT tasks.*, projects.name AS project_name FROM tasks LEFT JOIN projects ON tasks.project_id = projects.id ORDER BY tasks.id DESC"
-    )
-    .all();
+    if (
+      err instanceof SyntaxError &&
+      err.status === 400 &&
+      "body" in err
+    ) {
+      return res.status(400).json({
+        error:
+          "Invalid JSON request body.",
+      });
+    }
 
-  const pendingTasks = tasks.filter(
-    (task) => task.status === "pending"
+    return res.status(500).json({
+      error:
+        "Internal server error.",
+    });
+  }
+);
+
+// ======================================================
+// SERVER START
+// ======================================================
+
+const server =
+  app.listen(
+    PORT,
+    "0.0.0.0",
+    () => {
+      console.log(
+        "=========================================="
+      );
+
+      console.log(
+        `${appName}`
+      );
+
+      console.log(
+        `Server running on port ${PORT}`
+      );
+
+      console.log(
+        `Health: http://localhost:${PORT}/`
+      );
+
+      console.log(
+        `Swagger: http://localhost:${PORT}/api-docs`
+      );
+
+      console.log(
+        "=========================================="
+      );
+    }
   );
 
-  const inProgressTasks = tasks.filter(
-    (task) => task.status === "in-progress"
-  );
-
-  const completedTasks = tasks.filter(
-    (task) => task.status === "completed"
-  );
-
-  const highPriorityTasks = tasks.filter(
-    (task) =>
-      task.priority === "high" &&
-      task.status !== "completed"
-  );
-
-  const recommendations = [];
-
-  if (highPriorityTasks.length > 0) {
-    recommendations.push(
-      "Focus on high-priority tasks first."
-    );
-  }
-
-  if (pendingTasks.length > 0) {
-    recommendations.push(
-      "Review pending tasks and start the most urgent ones."
-    );
-  }
-
-  if (inProgressTasks.length > 0) {
-    recommendations.push(
-      "Continue working on your in-progress tasks."
-    );
-  }
-
-  if (
-    projects.length > 0 &&
-    tasks.length === 0
-  ) {
-    recommendations.push(
-      "Your projects have no tasks yet. Add tasks to track project progress."
-    );
-  }
-
-  if (clients.length === 0) {
-    recommendations.push(
-      "Add your first client to start managing your freelance business."
-    );
-  }
-
-  if (projects.length === 0) {
-    recommendations.push(
-      "Create a project and connect it with a client."
-    );
-  }
-
-  if (recommendations.length === 0) {
-    recommendations.push(
-      "Your business data looks organized. Keep monitoring projects, tasks, and deadlines."
-    );
-  }
-
-  res.json({
-    message:
-      "AI Business Assistant response generated successfully",
-
-    query: message,
-
-    businessSummary: {
-      totalClients: clients.length,
-      totalProjects: projects.length,
-      totalTasks: tasks.length,
-      pendingTasks: pendingTasks.length,
-      inProgressTasks: inProgressTasks.length,
-      completedTasks: completedTasks.length,
-      highPriorityTasks: highPriorityTasks.length
-    },
-
-    clients: clients,
-
-    projects: projects,
-
-    tasks: tasks,
-
-    recommendations: recommendations
-  });
-});
-
 // ======================================================
-// 404 ROUTE
+// GRACEFUL SHUTDOWN
 // ======================================================
 
-app.use((req, res) => {
-  res.status(404).json({
-    error: "Route not found",
-    path: req.originalUrl
-  });
-});
-
-// ======================================================
-// ERROR HANDLER
-// ======================================================
-
-app.use((err, req, res, next) => {
-  console.error(err);
-
-  res.status(500).json({
-    error: "Internal server error"
-  });
-});
-
-// ======================================================
-// START SERVER
-// ======================================================
-
-app.listen(PORT, () => {
+function shutdown(signal) {
   console.log(
-    "Server running on http://localhost:" + PORT
+    `\n${signal} received. Shutting down server...`
   );
-});
+
+  server.close(() => {
+    try {
+      db.close();
+
+      console.log(
+        "Database connection closed."
+      );
+
+      console.log(
+        "Server stopped."
+      );
+
+      process.exit(0);
+    } catch (error) {
+      console.error(
+        "Shutdown error:",
+        error
+      );
+
+      process.exit(1);
+    }
+  });
+}
+
+process.on(
+  "SIGINT",
+  () => shutdown("SIGINT")
+);
+
+process.on(
+  "SIGTERM",
+  () => shutdown("SIGTERM")
+);

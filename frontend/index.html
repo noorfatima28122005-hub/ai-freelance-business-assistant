@@ -1,0 +1,1128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Freelance Assistant | AI Business Dashboard</title>
+
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+  <!-- =====================================================
+       AUTH SCREEN
+  ====================================================== -->
+
+  <div id="authScreen" class="auth-screen">
+
+    <div class="auth-card">
+
+      <div class="auth-brand">
+        <div class="brand-icon">AI</div>
+
+        <div>
+          <h1>Freelance</h1>
+          <h1>Assistant</h1>
+        </div>
+      </div>
+
+      <div class="auth-heading">
+        <span class="eyebrow">AI BUSINESS MANAGEMENT</span>
+
+        <h2 id="authTitle">Welcome back</h2>
+
+        <p id="authSubtitle">
+          Sign in to manage your freelance business.
+        </p>
+      </div>
+
+
+      <!-- LOGIN FORM -->
+
+      <form id="loginForm" class="auth-form">
+
+        <div class="form-group">
+          <label for="loginEmail">Email</label>
+
+          <input
+            type="email"
+            id="loginEmail"
+            placeholder="Enter your email"
+            autocomplete="email"
+            required
+          >
+        </div>
+
+        <div class="form-group">
+          <label for="loginPassword">Password</label>
+
+          <input
+            type="password"
+            id="loginPassword"
+            placeholder="Enter your password"
+            autocomplete="current-password"
+            required
+          >
+        </div>
+
+        <button
+          type="submit"
+          id="loginButton"
+          class="btn primary-btn auth-submit"
+        >
+          Sign In
+        </button>
+
+      </form>
+
+
+      <!-- SIGNUP FORM -->
+
+      <form id="signupForm" class="auth-form hidden">
+
+        <div class="form-group">
+          <label for="signupName">Full Name</label>
+
+          <input
+            type="text"
+            id="signupName"
+            placeholder="Enter your name"
+            autocomplete="name"
+            required
+          >
+        </div>
+
+        <div class="form-group">
+          <label for="signupEmail">Email</label>
+
+          <input
+            type="email"
+            id="signupEmail"
+            placeholder="Enter your email"
+            autocomplete="email"
+            required
+          >
+        </div>
+
+        <div class="form-group">
+          <label for="signupPassword">Password</label>
+
+          <input
+            type="password"
+            id="signupPassword"
+            placeholder="Create a password"
+            autocomplete="new-password"
+            required
+          >
+        </div>
+
+        <button
+          type="submit"
+          id="signupButton"
+          class="btn primary-btn auth-submit"
+        >
+          Create Account
+        </button>
+
+      </form>
+
+
+      <div id="authMessage" class="auth-message hidden"></div>
+
+
+      <div class="auth-switch">
+
+        <span id="authSwitchText">
+          Don't have an account?
+        </span>
+
+        <button
+          type="button"
+          id="authSwitchButton"
+          class="text-button"
+        >
+          Create account
+        </button>
+
+      </div>
+
+    </div>
+
+  </div>
+
+
+  <!-- =====================================================
+       APPLICATION
+  ====================================================== -->
+
+  <div id="appScreen" class="app-screen hidden">
+
+
+    <!-- ===================================================
+         SIDEBAR
+    ==================================================== -->
+
+    <aside class="sidebar">
+
+      <div class="brand">
+
+        <div class="brand-icon">
+          AI
+        </div>
+
+        <div>
+          <h1>Freelance</h1>
+          <h1>Assistant</h1>
+        </div>
+
+      </div>
+
+
+      <nav class="sidebar-nav">
+
+        <div class="nav-section">
+
+          <span class="nav-title">
+            MAIN
+          </span>
+
+          <a href="#" class="nav-link active">
+            <span>⌂</span>
+            <span>Dashboard</span>
+          </a>
+
+          <a href="#clientsSection" class="nav-link">
+            <span>♙</span>
+            <span>Clients</span>
+          </a>
+
+          <a href="#projectsSection" class="nav-link">
+            <span>▣</span>
+            <span>Projects</span>
+          </a>
+
+          <a href="#tasksSection" class="nav-link">
+            <span>✓</span>
+            <span>Tasks</span>
+          </a>
+
+        </div>
+
+
+        <div class="nav-section">
+
+          <span class="nav-title">
+            TOOLS
+          </span>
+
+          <a href="#assistantSection" class="nav-link">
+            <span>✦</span>
+            <span>AI Assistant</span>
+          </a>
+
+        </div>
+
+      </nav>
+
+
+      <div class="sidebar-footer">
+
+        <div class="sidebar-status">
+
+          <span
+            id="sidebarStatusDot"
+            class="status-dot"
+          ></span>
+
+          <span id="connectionText">
+            Checking...
+          </span>
+
+        </div>
+
+        <div class="sidebar-user">
+          <span id="sidebarUserName">
+            User
+          </span>
+
+          <button
+            type="button"
+            id="logoutButton"
+            class="logout-button"
+          >
+            Logout
+          </button>
+        </div>
+
+        <div class="sidebar-api">
+          Backend API
+        </div>
+
+      </div>
+
+    </aside>
+
+
+    <!-- ===================================================
+         MAIN CONTENT
+    ==================================================== -->
+
+    <main class="main-content">
+
+
+      <!-- TOPBAR -->
+
+      <header class="topbar">
+
+        <div>
+
+          <h2>
+            Dashboard
+          </h2>
+
+          <p>
+            AI-powered freelance business management
+          </p>
+
+        </div>
+
+
+        <div class="topbar-actions">
+
+          <div class="user-badge">
+
+            <div class="user-avatar">
+              <span id="userInitial">
+                N
+              </span>
+            </div>
+
+            <div>
+              <strong id="topUserName">
+                User
+              </strong>
+
+              <small id="topUserEmail">
+                —
+              </small>
+            </div>
+
+          </div>
+
+
+          <button
+            id="refreshDashboard"
+            class="btn secondary-btn"
+            type="button"
+          >
+            ↻ Refresh
+          </button>
+
+
+          <div class="api-badge">
+
+            <span
+              id="topStatusDot"
+              class="status-dot"
+            ></span>
+
+            <span id="topConnectionText">
+              Checking...
+            </span>
+
+          </div>
+
+        </div>
+
+      </header>
+
+
+      <!-- ===================================================
+           DASHBOARD
+      ==================================================== -->
+
+      <section class="dashboard-section">
+
+
+        <!-- WELCOME -->
+
+        <div class="welcome-row">
+
+          <div>
+
+            <span class="eyebrow">
+              OVERVIEW
+            </span>
+
+            <h1>
+              Welcome back <span id="welcomeName">👋</span>
+            </h1>
+
+            <p>
+              Here's what's happening with your freelance business today.
+            </p>
+
+          </div>
+
+        </div>
+
+
+        <!-- =================================================
+             STAT CARDS
+        ================================================== -->
+
+        <div class="stats-grid">
+
+
+          <div class="stat-card">
+
+            <div class="stat-icon">
+              ♙
+            </div>
+
+            <div class="stat-content">
+
+              <span class="stat-label">
+                Total Clients
+              </span>
+
+              <strong id="totalClients">
+                0
+              </strong>
+
+              <small>
+                Active client records
+              </small>
+
+            </div>
+
+          </div>
+
+
+          <div class="stat-card">
+
+            <div class="stat-icon">
+              ▣
+            </div>
+
+            <div class="stat-content">
+
+              <span class="stat-label">
+                Projects
+              </span>
+
+              <strong id="totalProjects">
+                0
+              </strong>
+
+              <small>
+                Projects in your workspace
+              </small>
+
+            </div>
+
+          </div>
+
+
+          <div class="stat-card">
+
+            <div class="stat-icon">
+              ✓
+            </div>
+
+            <div class="stat-content">
+
+              <span class="stat-label">
+                Total Tasks
+              </span>
+
+              <strong id="totalTasks">
+                0
+              </strong>
+
+              <small>
+                Tasks across projects
+              </small>
+
+            </div>
+
+          </div>
+
+
+          <div class="stat-card">
+
+            <div class="stat-icon">
+              ✓
+            </div>
+
+            <div class="stat-content">
+
+              <span class="stat-label">
+                Completed
+              </span>
+
+              <strong id="completedTasks">
+                0
+              </strong>
+
+              <small>
+                Successfully completed tasks
+              </small>
+
+            </div>
+
+          </div>
+
+        </div>
+
+
+        <!-- =================================================
+             TASK PROGRESS + UPCOMING
+        ================================================== -->
+
+        <div class="dashboard-grid">
+
+
+          <!-- TASK PROGRESS -->
+
+          <section class="panel">
+
+            <div class="panel-header">
+
+              <div>
+
+                <h2>
+                  Task Progress
+                </h2>
+
+                <p>
+                  Current workload overview.
+                </p>
+
+              </div>
+
+            </div>
+
+
+            <div class="progress-list">
+
+
+              <div class="progress-item">
+
+                <div class="progress-info">
+
+                  <span>
+                    Pending
+                  </span>
+
+                  <strong id="pendingTasks">
+                    0
+                  </strong>
+
+                </div>
+
+                <div class="progress-bar">
+
+                  <div
+                    id="pendingProgress"
+                    class="progress-fill"
+                    style="width: 0%"
+                  ></div>
+
+                </div>
+
+              </div>
+
+
+              <div class="progress-item">
+
+                <div class="progress-info">
+
+                  <span>
+                    In Progress
+                  </span>
+
+                  <strong id="inProgressTasks">
+                    0
+                  </strong>
+
+                </div>
+
+                <div class="progress-bar">
+
+                  <div
+                    id="inProgressProgress"
+                    class="progress-fill"
+                    style="width: 0%"
+                  ></div>
+
+                </div>
+
+              </div>
+
+
+              <div class="progress-item">
+
+                <div class="progress-info">
+
+                  <span>
+                    Completed
+                  </span>
+
+                  <strong id="completedProgressTasks">
+                    0
+                  </strong>
+
+                </div>
+
+                <div class="progress-bar">
+
+                  <div
+                    id="completedProgress"
+                    class="progress-fill"
+                    style="width: 0%"
+                  ></div>
+
+                </div>
+
+              </div>
+
+            </div>
+
+          </section>
+
+
+          <!-- UPCOMING TASKS -->
+
+          <section class="panel">
+
+            <div class="panel-header">
+
+              <div>
+
+                <h2>
+                  Upcoming Tasks
+                </h2>
+
+                <p>
+                  Things that need your attention.
+                </p>
+
+              </div>
+
+              <a
+                href="#tasksSection"
+                class="view-link"
+              >
+                View all
+              </a>
+
+            </div>
+
+
+            <div
+              id="upcomingTasksContainer"
+              class="upcoming-list"
+            >
+
+              <div class="empty-state">
+                No upcoming tasks.
+              </div>
+
+            </div>
+
+          </section>
+
+        </div>
+
+
+        <!-- =================================================
+             QUICK ACTIONS
+        ================================================== -->
+
+        <section class="quick-actions">
+
+          <div class="section-heading">
+
+            <div>
+
+              <span class="eyebrow">
+                QUICK ACTIONS
+              </span>
+
+              <h2>
+                Manage your business
+              </h2>
+
+            </div>
+
+          </div>
+
+
+          <div class="action-grid">
+
+
+            <a
+              href="#clientsSection"
+              class="action-card"
+            >
+
+              <div class="action-icon">
+                ♙
+              </div>
+
+              <div>
+
+                <h3>
+                  Clients
+                </h3>
+
+                <p>
+                  View your clients
+                </p>
+
+              </div>
+
+              <span class="action-arrow">
+                →
+              </span>
+
+            </a>
+
+
+            <a
+              href="#projectsSection"
+              class="action-card"
+            >
+
+              <div class="action-icon">
+                ▣
+              </div>
+
+              <div>
+
+                <h3>
+                  Projects
+                </h3>
+
+                <p>
+                  Track your projects
+                </p>
+
+              </div>
+
+              <span class="action-arrow">
+                →
+              </span>
+
+            </a>
+
+
+            <a
+              href="#tasksSection"
+              class="action-card"
+            >
+
+              <div class="action-icon">
+                ✓
+              </div>
+
+              <div>
+
+                <h3>
+                  Tasks
+                </h3>
+
+                <p>
+                  Manage your workload
+                </p>
+
+              </div>
+
+              <span class="action-arrow">
+                →
+              </span>
+
+            </a>
+
+
+            <a
+              href="#assistantSection"
+              class="action-card"
+            >
+
+              <div class="action-icon">
+                ✦
+              </div>
+
+              <div>
+
+                <h3>
+                  Ask AI
+                </h3>
+
+                <p>
+                  Get business insights
+                </p>
+
+              </div>
+
+              <span class="action-arrow">
+                →
+              </span>
+
+            </a>
+
+          </div>
+
+        </section>
+
+
+        <!-- =================================================
+             AI ASSISTANT
+        ================================================== -->
+
+        <section
+          id="assistantSection"
+          class="section"
+        >
+
+          <div class="section-heading">
+
+            <div>
+
+              <span class="eyebrow">
+                AI TOOL
+              </span>
+
+              <h2>
+                ✦ AI Business Assistant
+              </h2>
+
+              <p>
+                Ask questions about your clients, projects,
+                tasks, deadlines and business priorities.
+              </p>
+
+            </div>
+
+          </div>
+
+
+          <div class="assistant-card">
+
+            <div
+              id="assistantMessages"
+              class="assistant-messages"
+            >
+
+              <div class="assistant-message">
+
+                <div class="message-avatar">
+                  AI
+                </div>
+
+                <div class="message-content">
+
+                  <strong>
+                    AI Assistant
+                  </strong>
+
+                  <p>
+                    Hello! I can help you understand your
+                    freelance business.
+                  </p>
+
+                  <p>
+                    Try asking:
+                  </p>
+
+                  <em>
+                    "Give me a summary of my freelance business."
+                  </em>
+
+                  <br>
+
+                  <em>
+                    "What should I focus on next?"
+                  </em>
+
+                </div>
+
+              </div>
+
+            </div>
+
+
+            <form
+              id="assistantForm"
+              class="assistant-form"
+            >
+
+              <input
+                type="text"
+                id="assistantInput"
+                placeholder="Ask your AI business assistant..."
+                autocomplete="off"
+                required
+              >
+
+              <button
+                type="submit"
+                class="btn primary-btn"
+                id="assistantButton"
+              >
+                Ask AI
+              </button>
+
+            </form>
+
+          </div>
+
+        </section>
+
+
+        <!-- =================================================
+             CLIENTS
+        ================================================== -->
+
+        <section
+          id="clientsSection"
+          class="section"
+        >
+
+          <div class="section-heading">
+
+            <div>
+
+              <span class="eyebrow">
+                CLIENT MANAGEMENT
+              </span>
+
+              <h2>
+                Clients
+              </h2>
+
+              <p>
+                Manage your freelance clients.
+              </p>
+
+            </div>
+
+            <button
+              id="loadClients"
+              class="btn secondary-btn"
+              type="button"
+            >
+              Load Clients
+            </button>
+
+          </div>
+
+
+          <div
+            id="clientsContainer"
+            class="data-container"
+          >
+
+            <div class="empty-state">
+              Click "Load Clients" to view your clients.
+            </div>
+
+          </div>
+
+        </section>
+
+
+        <!-- =================================================
+             PROJECTS
+        ================================================== -->
+
+        <section
+          id="projectsSection"
+          class="section"
+        >
+
+          <div class="section-heading">
+
+            <div>
+
+              <span class="eyebrow">
+                PROJECT MANAGEMENT
+              </span>
+
+              <h2>
+                Projects
+              </h2>
+
+              <p>
+                Track your current freelance projects.
+              </p>
+
+            </div>
+
+            <button
+              id="loadProjects"
+              class="btn secondary-btn"
+              type="button"
+            >
+              Load Projects
+            </button>
+
+          </div>
+
+
+          <div
+            id="projectsContainer"
+            class="data-container"
+          >
+
+            <div class="empty-state">
+              Click "Load Projects" to view your projects.
+            </div>
+
+          </div>
+
+        </section>
+
+
+        <!-- =================================================
+             TASKS
+        ================================================== -->
+
+        <section
+          id="tasksSection"
+          class="section"
+        >
+
+          <div class="section-heading">
+
+            <div>
+
+              <span class="eyebrow">
+                TASK MANAGEMENT
+              </span>
+
+              <h2>
+                Tasks
+              </h2>
+
+              <p>
+                Track task progress and deadlines.
+              </p>
+
+            </div>
+
+            <button
+              id="loadTasks"
+              class="btn secondary-btn"
+              type="button"
+            >
+              Load Tasks
+            </button>
+
+          </div>
+
+
+          <div
+            id="tasksContainer"
+            class="data-container"
+          >
+
+            <div class="empty-state">
+              Click "Load Tasks" to view your tasks.
+            </div>
+
+          </div>
+
+        </section>
+
+
+        <!-- =================================================
+             SYSTEM STATUS
+        ================================================== -->
+
+        <section class="section">
+
+          <div class="section-heading">
+
+            <div>
+
+              <span class="eyebrow">
+                SYSTEM
+              </span>
+
+              <h2>
+                API Connection
+              </h2>
+
+              <p>
+                Backend service connection status.
+              </p>
+
+            </div>
+
+          </div>
+
+
+          <div class="api-status-card">
+
+            <div class="api-status-icon">
+              ●
+            </div>
+
+            <div>
+
+              <strong id="apiStatus">
+                Checking...
+              </strong>
+
+              <p>
+                Backend API status
+              </p>
+
+            </div>
+
+          </div>
+
+        </section>
+
+      </section>
+
+    </main>
+
+  </div>
+
+
+  <!-- =====================================================
+       FOOTER
+  ====================================================== -->
+
+  <footer
+    id="appFooter"
+    class="footer hidden"
+  >
+
+    <p>
+
+      AI Freelance Business Assistant
+
+      <span>•</span>
+
+      Node.js & Express
+
+      <span>•</span>
+
+      Professional Business Dashboard
+
+    </p>
+
+  </footer>
+
+
+  <script src="app.js"></script>
+
+</body>
+</html>
